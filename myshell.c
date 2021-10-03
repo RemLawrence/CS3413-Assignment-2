@@ -7,6 +7,7 @@
 #include <stdbool.h>
 
 #define BUFSIZE 1024
+bool isPipe = false;
 
 void parse(char *line, char **argv, char *buffer)
 {
@@ -15,14 +16,19 @@ void parse(char *line, char **argv, char *buffer)
     if(buffer[len-1] == '\n'){ // Remove Enter
         buffer[len-1] = '\0';
     }
-    char* token;
-    int i=0;
-    while ((token = strtok_r(line, " ", &line)) && i<=100){
-        argv[i] = token;
-        i++;
+    char* tokenizedStr;
+    int cmdIndex=0;
+    while ((tokenizedStr = strtok_r(line, " ", &line)) && cmdIndex<=100){
+        argv[cmdIndex] = tokenizedStr;
+        cmdIndex++;
+
+        if((strcmp(tokenizedStr, "|") == 0)){
+            isPipe = true; // Check if this cmd requires pipe
+        }
         //printf("%s\n", token);
     }
-    argv[i] = '\0';
+    argv[cmdIndex] = '\0';
+    printf("%d\n", isPipe);
 }
 
 void execute_command(char *cmd, char **argv, char *buffer) {
@@ -36,9 +42,9 @@ void execute_command(char *cmd, char **argv, char *buffer) {
         parse(cmd, argv, buffer);
         //printf("cmd %s\n", cmd);
         //printf("*argv %s\n", *argv);
-        //printf("argv[0] %s\n", argv[0]);
-        //printf("argv[1] %s\n", argv[1]);
-        //printf("argv[2] %s\n", argv[2]);
+        printf("argv[0] %s\n", argv[0]);
+        printf("argv[1] %s\n", argv[1]);
+        printf("argv[2] %s\n", argv[2]);
         
         if (strcmp(argv[0], "exit") == 0) {  /* is it an "exit"?     */
             printf("Quit Shell\n");
@@ -75,6 +81,8 @@ int main(void) {
     char *argv[64];            /* the command line argument      */
     
     char buffer[BUFSIZE];	// room for 80 chars plus \0
+
+    int fileDescriptor[2];
 
     execute_command(cmd, argv, buffer);
 
