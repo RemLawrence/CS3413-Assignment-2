@@ -51,6 +51,11 @@ void execute_command(char *cmd, char *buffer) {
             exit(0);
         }
 
+        if (pipeNumber > 100) {  // if this command requires more than 100 pipes
+            printf("This shell program only supports maximum 100 number of commands :)\n");
+            exit(0);
+        }
+
         if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
             changeDir = true;
             chdir(argv[1]);
@@ -129,7 +134,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                     exit(0);
                 }
             }
-            //close(pipes[i][0]);
             close(pipes[i][1]); // This line saved my life
             waitpid(pid1, NULL, 0); // Just wait until children's done.
         }
@@ -163,7 +167,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             }
             waitpid(pid2, NULL, 0);
             close(pipes[i-1][1]); // Close the unused last pipew end
-            //close(pipes[i][0]); // Close the unused this piper
             close(pipes[i-1][0]);
             close(pipes[i][1]);
         }
@@ -179,7 +182,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             }   
             else { // pid == 0, child's work
                 close(pipes[i-1][1]); // Close the unused last pipew end
-                //close(pipes[i][0]); // Close the unused this piper
                 close(pipes[i-1][0]);
                 close(pipes[i][1]); // Close the unused pipew end
                 dup2(pipes[i][0], 0); // Replace stdin with piper
@@ -189,7 +191,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 for(lastPipedCmdIndex = 0; argv[0] != NULL; lastPipedCmdIndex++){
                     lastCmd[lastPipedCmdIndex] = argv[0];
                     argv = argv + 1;
-                    //printf("2 index %d\n", index);
                 }
                 argv = argv + 1;
                 pipedCmd[lastPipedCmdIndex + 1] = "\0";
@@ -214,7 +215,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
         }
         //printf("**************LOOP ENDS****************\n");
     }
-    //return 0;
 }
 
 int main(void) {
