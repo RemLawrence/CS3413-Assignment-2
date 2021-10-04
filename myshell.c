@@ -78,19 +78,6 @@ void execute_command(char *cmd, char *buffer) {
     }
 }
 
-/*
-void getPipedCommand(char** argv, char** pipedCmd) {
-    int index = 0;
-    for(index = 0; (strcmp(argv[0], "|") != 0); index++){
-        pipedCmd[index] = argv[0];
-        argv = argv + 1;
-        printf("index %d\n", index);
-    }
-    argv = argv + 1;
-    pipedCmd[index + 1] = "\0";
-}
-*/
-
 void execute_pipe_command(int pipeNumber, char** argv) {
     // At this point, the cmd are at least in this format: ls /usr/bin | grep a
     int pipes[pipeNumber][2];
@@ -212,9 +199,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 // printf("3 lastCmd[2] %s\n", lastCmd[2]);
                 //printf("3 argv[0] %s\n", argv[0]);
                 
-                // argv[0] = "grep";
-                // argv[1] = "c";
-                // argv[2] = NULL;
                 int return_code = execvp(*lastCmd, lastCmd); // execute the command
                 close(pipes[i][0]);
                 if(return_code != 0) {
