@@ -102,6 +102,19 @@ void execute_pipe_command(int pipeNumber, char** argv) {
     }
 
     for(int i = 0; i < pipeNumber; i++) {
+
+        char *pipedCmd[1024]; /* the command line argument      */
+        int index = 0;
+        for(index = 0; (strcmp(argv[0], "|") != 0); index++){
+            pipedCmd[index] = argv[0];
+            argv = argv + 1;
+            printf("argv[0] before: %s\n", argv[0]);
+        }
+        argv = argv + 1;
+        printf("argv[0] now: %s\n", argv[0]);
+        pipedCmd[index + 1] = "\0";
+
+
         if(i == 0) {
             int pid1 = fork();
             if(pid1 != 0) {
@@ -111,20 +124,10 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 close(pipes[i][0]); // Close the unused piper end
                 dup2(pipes[i][1], 1); // Replace stdout with pipew . Stdout is disabled
 
-                char *pipedCmd[1024]; /* the command line argument      */
-                int index = 0;
-                for(index = 0; (strcmp(argv[0], "|") != 0); index++){
-                    pipedCmd[index] = argv[0];
-                    argv = argv + 1;
-                    //printf("index %d\n", index);
-                }
-                argv = argv + 1;
-                pipedCmd[index + 1] = "\0";
-
-                // printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
-                // printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
-                // printf("1 pipedCmd[2] %s\n", pipedCmd[2]);
-                // printf("1 argv[0] %s\n", argv[0]);
+                printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
+                printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
+                printf("1 pipedCmd[2] %s\n", pipedCmd[2]);
+                printf("1 argv[0] %s\n", argv[0]);
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 //write(pipe[1], stdout, 1);
@@ -146,26 +149,26 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             else { // pid == 0, child's work
                 close(pipes[i][1]); // Close the unused pipew end
                 dup2(pipes[i][0], 0); // Replace stdin with piper
-                
-                char *pipedCmd[1024]; /* the command line argument      */
-                int index = 0;
-                for(index = 0; (strcmp(argv[0], "|") != 0); index++){
-                    pipedCmd[index] = argv[0];
+
+                char* lastCmd[1024];
+                int lastPipedCmdIndex = 0;
+                for(lastPipedCmdIndex = 0; argv[0] != NULL; lastPipedCmdIndex++){
+                    lastCmd[lastPipedCmdIndex] = argv[0];
                     argv = argv + 1;
-                    //printf("index %d\n", index);
+                    //printf("2 index %d\n", index);
                 }
                 argv = argv + 1;
-                pipedCmd[index + 1] = "\0";
-
-                // printf("2 pipedCmd[0] %s\n", pipedCmd[0]);
-                // printf("2 pipedCmd[1] %s\n", pipedCmd[1]);
-                // printf("2 pipedCmd[2] %s\n", pipedCmd[2]);
-                // printf("2 argv[0] %s\n", argv[0]);
+                pipedCmd[lastPipedCmdIndex + 1] = "\0";
+                
+                printf("2 lastCmd[0] %s\n", lastCmd[0]);
+                printf("2 lastCmd[1] %s\n", lastCmd[1]);
+                printf("2 lastCmd[2] %s\n", lastCmd[2]);
+                //printf("2 argv[0] %s\n", argv[0]);
                 
                 // argv[0] = "grep";
                 // argv[1] = "c";
                 // argv[2] = NULL;
-                int return_code = execvp(*argv, argv); // execute the command
+                int return_code = execvp(*lastCmd, lastCmd); // execute the command
                 close(pipes[i][0]);
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
