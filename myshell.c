@@ -13,7 +13,7 @@ void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
 {
     // child work
     int len = strlen(buffer); // length of entered command
-    if(buffer[len-1] == '\n'){ // Remove Enter
+    if(buffer[len-1] == '\n') { // Remove Enter
         buffer[len-1] = '\0';
     }
     char* tokenizedStr;
@@ -41,8 +41,13 @@ void execute_command(char *cmd, char *buffer) {
         printf("%s %% ", getcwd(NULL, 1024)); // Get the current dir.
 
         cmd = fgets(buffer, BUFSIZE, stdin);
-        parse(cmd, argv, buffer, &isPipe, &pipeNumber);
-
+        if(strcmp(cmd, "\n") == 0) {
+            printf("Your command is invalid. Please re-enter one.\n");
+        }
+        else {
+            parse(cmd, argv, buffer, &isPipe, &pipeNumber);
+        }
+        
         printf("isPipe %d\n", isPipe);
         printf("pipeNumber %d\n", pipeNumber);
         
