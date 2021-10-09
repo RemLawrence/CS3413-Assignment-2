@@ -102,7 +102,7 @@ void execute_pipe_command(int pipeNumber, char** argv) {
 
     int i = 0;
     for(i = 0; i < pipeNumber; i++) {
-        printf("index: %d\n", i);
+        //printf("index: %d\n", i);
         char *pipedCmd[1024] = {0}; // Used for storing separate commands from the argv[]
         int index = 0;
         for(index = 0; (strcmp(argv[0], "|") != 0); index++) {
@@ -110,11 +110,11 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             pipedCmd[index] = argv[0]; // Store the separate command into pipedCmd[]
             argv = argv + 1; // Increase the original cmd pointer
         }
-        printf("argv[0] before: %s\n", argv[0]);
+        //printf("argv[0] before: %s\n", argv[0]);
         argv = argv + 1; // Increase the pointer to skip '|'
-        printf("argv[0] now: %s\n", argv[0]);
+        //printf("argv[0] now: %s\n", argv[0]);
         //pipedCmd[index + 1] = "\0";
-        printf("pipedCmd[0]: %s\n", pipedCmd[0]);
+        //printf("pipedCmd[0]: %s\n", pipedCmd[0]);
 
 
         if(i == 0) {
@@ -128,10 +128,10 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 close(pipes[i][0]); // Close the unused piper end
                 dup2(pipes[i][1], 1); // Replace stdout with pipew . Stdout is disabled
 
-                printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
-                printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
-                printf("1 pipedCmd[2] %s\n", pipedCmd[2]);
-                printf("1 argv[0] %s\n", argv[0]);
+                // printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
+                // printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
+                // printf("1 pipedCmd[2] %s\n", pipedCmd[2]);
+                // printf("1 argv[0] %s\n", argv[0]);
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 //write(pipe[1], stdout, 1);
@@ -158,10 +158,10 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 dup2(pipes[i-1][0], 0); // Replace stdin with last piper
                 dup2(pipes[i][1], 1); // Replace stdout with this pipew
 
-                printf("2 pipedCmd[0] %s\n", pipedCmd[0]);
-                printf("2 pipedCmd[1] %s\n", pipedCmd[1]);
-                printf("2 pipedCmd[2] %s\n", pipedCmd[2]);
-                printf("2 argv[0] %s\n", argv[0]);
+                // printf("2 pipedCmd[0] %s\n", pipedCmd[0]);
+                // printf("2 pipedCmd[1] %s\n", pipedCmd[1]);
+                // printf("2 pipedCmd[2] %s\n", pipedCmd[2]);
+                // printf("2 argv[0] %s\n", argv[0]);
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 close(pipes[i-1][0]); // Close last pipe's read end (in child)
@@ -202,9 +202,9 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 argv = argv + 1;
                 lastCmd[lastPipedCmdIndex + 1] = "\0";
 
-                printf("3 lastCmd[0] %s\n", lastCmd[0]);
-                printf("3 lastCmd[1] %s\n", lastCmd[1]);
-                printf("3 lastCmd[2] %s\n", lastCmd[2]);
+                // printf("3 lastCmd[0] %s\n", lastCmd[0]);
+                // printf("3 lastCmd[1] %s\n", lastCmd[1]);
+                // printf("3 lastCmd[2] %s\n", lastCmd[2]);
                 //printf("3 argv[0] %s\n", argv[0]);
                 
                 int return_code = execvp(*lastCmd, lastCmd); // execute the command
