@@ -91,14 +91,16 @@ void execute_command(char *cmd, char *buffer) {
 void execute_pipe_command(int pipeNumber, char** argv) {
     // At this point, the cmd are at least in this format: ls /usr/bin | grep a
     int pipes[pipeNumber][2];
-    for(int i = 0; i < pipeNumber; i++) {
-        if(pipe(pipes[i]) < 0) {
+    int pipeIndex = 0;
+    for(pipeIndex = 0; pipeIndex < pipeNumber; pipeIndex++) {
+        if(pipe(pipes[pipeIndex]) < 0) {
             printf("An error occured with opening the pipe.\n");
             exit(0);
         }
     }
 
-    for(int i = 0; i < pipeNumber; i++) {
+    int currentPipeIndex = 0;
+    for(currentPipeIndex = 0; currentPipeIndex < pipeNumber; currentPipeIndex++) {
         //printf("index: %d\n", i);
         //printf("pipeNumber-1: %d\n", pipeNumber-1);
 
@@ -115,7 +117,7 @@ void execute_pipe_command(int pipeNumber, char** argv) {
         pipedCmd[index + 1] = "\0";
         //printf("pipedCmd[0]: %s\n", pipedCmd[0]);
 
-        if(i == 0) {
+        if(currentPipeIndex == 0) {
             /**********************Process only writes to pipe**********************/
             int pid1 = fork();
             if(pid1 != 0) {
@@ -123,8 +125,8 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 waitpid(pid1, NULL, 0);
             }
             else { // pid == 0, child's work
-                close(pipes[i][0]); // Close the unused piper end
-                dup2(pipes[i][1], 1); // Replace stdout with pipew . Stdout is disabled
+                close(pipes[currentPipeIndex][0]); // Close the unused piper end
+                dup2(pipes[currentPipeIndex][1], 1); // Replace stdout with pipew . Stdout is disabled
 
                 // printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
                 // printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
@@ -133,13 +135,13 @@ void execute_pipe_command(int pipeNumber, char** argv) {
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 //write(pipe[1], stdout, 1);
-                close(pipes[i][1]);
+                close(pipes[currentPipeIndex][1]);
                 if(return_code != 0 || argv[0] == NULL) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
             }
-            close(pipes[i][1]); // This line saved my life
+            close(pipes[currentPipeIndex][1]); // This line saved my life
             waitpid(pid1, NULL, 0); // Just wait until children's done.
         }
         else {
@@ -151,10 +153,10 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 waitpid(pid2, NULL, 0);
             }   
             else { // pid == 0, child's work
-                close(pipes[i-1][1]); // Close the unused last pipew end
-                close(pipes[i][0]); // Close the unused this piper
-                dup2(pipes[i-1][0], 0); // Replace stdin with last piper
-                dup2(pipes[i][1], 1); // Replace stdout with this pipew
+                close(pipes[currentPipeIndex-1][1]); // Close the unused last pipew end
+                close(pipes[currentPipeIndex][0]); // Close the unused this piper
+                dup2(pipes[currentPipeIndex-1][0], 0); // Replace stdin with last piper
+                dup2(pipes[currentPipeIndex][1], 1); // Replace stdout with this pipew
 
                 // printf("2 pipedCmd[0] %s\n", pipedCmd[0]);
                 // printf("2 pipedCmd[1] %s\n", pipedCmd[1]);
@@ -162,8 +164,8 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 // printf("2 argv[0] %s\n", argv[0]);
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
-                close(pipes[i-1][0]);
-                close(pipes[i][1]);
+                close(pipes[currentPipeIndex-1][0]);
+                close(pipes[currentPipeIndex][1]);
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
@@ -171,13 +173,13 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 //exit(0);
             }
             waitpid(pid2, NULL, 0);
-            close(pipes[i-1][1]); // Close the unused last pipew end
-            close(pipes[i-1][0]);
-            close(pipes[i][1]);
+            close(pipes[currentPipeIndex-1][1]); // Close the unused last pipew end
+            close(pipes[currentPipeIndex-1][0]);
+            close(pipes[currentPipeIndex][1]);
         }
        
 
-        if (i == pipeNumber - 1) {
+        if (currentPipeIndex == pipeNumber - 1) {
             /**********************Process reads from pipe and write to stdout**********************/
             // then finish the pipe and starting to write stdout
             int pid3 = fork();
@@ -186,10 +188,10 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 waitpid(pid3, NULL, 0);
             }   
             else { // pid == 0, child's work
-                close(pipes[i-1][1]); // Close the unused last pipew end
-                close(pipes[i-1][0]);
-                close(pipes[i][1]); // Close the unused pipew end
-                dup2(pipes[i][0], 0); // Replace stdin with piper
+                close(pipes[currentPipeIndex-1][1]); // Close the unused last pipew end
+                close(pipes[currentPipeIndex-1][0]);
+                close(pipes[currentPipeIndex][1]); // Close the unused pipew end
+                dup2(pipes[currentPipeIndex][0], 0); // Replace stdin with piper
 
                 char* lastCmd[1024];
                 int lastPipedCmdIndex = 0;
@@ -206,7 +208,7 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 //printf("3 argv[0] %s\n", argv[0]);
                 
                 int return_code = execvp(*lastCmd, lastCmd); // execute the command
-                close(pipes[i][0]);
+                close(pipes[currentPipeIndex][0]);
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
@@ -215,8 +217,8 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             }
             
             waitpid(pid3, NULL, 0);
-            close(pipes[i][0]);
-            close(pipes[i][1]);
+            close(pipes[currentPipeIndex][0]);
+            close(pipes[currentPipeIndex][1]);
         }
         //printf("**************LOOP ENDS****************\n");
     }
