@@ -1,3 +1,7 @@
+/* Shell
+    Author: Micah Hanmin Wang
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,10 +14,7 @@
 #define BUFSIZE 1024
 int pid = 4396; // random pid for initialization
 void execute_pipe_command(int, char**);
-void sig_handler(int);
-int a = 0;
-int b = 0;
-int check = 0;
+
 
 void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
 {
@@ -40,80 +41,51 @@ void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
 void sig_handler(int signo)
 {
     if (signo == SIGTSTP) {
-        //sigset(SIGTSTP, SIG_DFL); // Set to default
-        //kill(pid, SIGTSTP);
-        // First check if the children are running
+        // First check if the child is running
         if (kill(pid, 0) == 0) {
             // There are jobs running
-            //b += 1;
-            //printf("\nb %d\n", b);
-
-            //printf("\nkill %d\n", kill(pid, 0));
-            // It should suspend the child process, if the child is running.
-            //sigset(SIGTSTP, SIG_IGN); //
-            
-            sigset(SIGTSTP, SIG_DFL);
-            kill(pid, SIGTSTP);
-            
-            printf("\nThe job is suspsnded. Type 'fg' to resume.\n");
-            //exit(0);
-            //kill(pid, SIGCONT);
+            printf("\nThe job is suspsnded. Type 'fg' to resume. (Or 'bg' if you want)\n");
         }
         else if (kill(pid, 0) == -1) {
             // No job currently running
-            //a += 1;
-            //printf("\na %d\n", a);
-            //sigset(SIGTSTP, SIG_IGN);
-            //printf("\nkill %d\n", kill(pid, 0));
-            //sigset(SIGTSTP, SIG_DFL);
-            
-            //sigset(SIGTSTP, SIG_DFL);
-            printf(" There currently is no job running! Shell is still alive. Type a command below!\n"); // If child isn not running, print this message
-
+            printf("\nThere currently is no job running! Shell is still alive. Type a command below!\n"); // If child isn not running, print this message
         }
-        signal(SIGTSTP, sig_handler); // re-subscribe
-        //(0);
     }
+    signal(signo, sig_handler); // re-subscribe
 }
 
 void execute_command(char *cmd, char *buffer) {
-
+    bool isfg = false; // Detect if the user entered fg
+    int contpid = 4396; // pid. Used for tracking those paused processes for now.
     while(cmd != NULL) {
+        
         char *argv[1024]; /* the command line argument      */
         bool changeDir = false; // If the command is cd xxx ?
         bool isPipe = false; // If the command needs pipe?
         int pipeNumber = 0;
-        // Print a prompt and read a command from standard input
-        printf("%s %% ", getcwd(NULL, 1024)); // Get the current dir.
-
+        
         // Catch Ctrl+Z
-        if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
-            printf("\nCan't catch SIGTSTP\n");
+        // if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
+        //     perror("\nCan't catch SIGTSTP\n");
+        // }
+        // Print a prompt and read a command from standard input
+        if(!isfg){
+            printf("%s %% ", getcwd(NULL, 1024)); // Get the current dir.
         }
-        //printf("************************************************************************************************Sure\n");
-
-        if(strcmp(cmd, "fg") == 0) {
-            changeDir = true;
-            printf("CONTINUE!\n");
-            kill(check, SIGCONT); // NO USE. WHY?
-        }
-
         cmd = fgets(buffer, BUFSIZE, stdin);
+
         if(strcmp(cmd, "\n") == 0) {
-            // If the user has hit just a space
+            // If the user has hit just an enter, catch it to prevent segfault
             printf("Your command is invalid. Please re-enter one.\n");
         }
         else {
-            // If the user didn't just hit a space, then parse the command normally.
+            // If the user didn't just hit an enter, then parse the command normally.
             parse(cmd, argv, buffer, &isPipe, &pipeNumber);
         }
 
-        // printf("isPipe %d\n", isPipe);
-        // printf("pipeNumber %d\n", pipeNumber);
-
         if (strcmp(argv[0], "exit") == 0) {  /* is it an "exit"?     */
             printf("Quit Shell\n");
-            exit(0);
+            exit(0); // Exit from the parent (shell)
         }
 
         if (pipeNumber > 100) {  // if this command requires more than 100 pipes
@@ -121,29 +93,64 @@ void execute_command(char *cmd, char *buffer) {
         }
 
         pid = fork();
-
-        printf("pid %d\n", pid);
-
         if(pid != 0) {
             // parent work
-            // kill(pid, SIGTSTP); // Send a SIGTSTP signal to all children from parent.
-            // usleep(3000000);
-            // kill(pid, SIGCONT); // Send a SIGCONT signal to all children from parent.
+            int status; // Used for tracking the process's status
+            // Catch Ctrl+Z
+            if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
+                perror("\nCan't catch SIGTSTP\n");
+            }
+            printf("parent pid %d\n", pid);
 
-            printf("If the children are running: %d\n", check); // Children not running
+            do {
+                waitpid(pid, &status, WUNTRACED | WCONTINUED);
+                printf("status %d\n", status);
+                printf("exited:    %d status: %d\n", WIFEXITED(status), WEXITSTATUS(status));
+                printf( "signalled: %d signal: %d\n", WIFSIGNALED(status), WTERMSIG(status));
+                printf("stopped:   %d signal: %d\n", WIFSTOPPED(status), WSTOPSIG(status));
+                printf("continued: %d\n", WIFCONTINUED(status));
+                printf("***************************\n");
+                printf("cmd %s\n", cmd);
+                if(WIFSTOPPED(status) == 1)
+                {
+                    printf("contpid pid %d\n", pid);
+                    contpid = pid;
+                    printf("child exited with code: %d\n", WIFSTOPPED(status));
+                    break;
+                }
+                
+            } while(!WIFEXITED(status));
 
-            check = waitpid(pid, NULL, WUNTRACED); // Just wait until children's done.
-            //printf("Papa parent is (done) waiting!\n");
+            if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
+                isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
+                printf("fg pid %d\n", pid);
+                printf("fg contpid %d\n", contpid);
+                changeDir = true;
+                kill(contpid, SIGCONT); // Continue the tracked process
+                int ifexit = waitpid(contpid, &status, WUNTRACED); // and let parent wait for it
+                printf("%d\n", ifexit);
+                if(ifexit == contpid){
+                    //Check if waitpid has finished. If finished, then restore the fg flag.
+                    isfg = false;
+                }
+            }
+            else if(strcmp(cmd, "bg") == 0) {
+                printf("bg pid %d\n", pid);
+                printf("bg contpid %d\n", contpid);
+                changeDir = true;
+                kill(contpid, SIGCONT); // Continue the tracked process
+                // Without locking the shell resources
+            }
         }
         else {
+            printf("parent pid  %d\n", pid);
             // pid == 0, child's work
             if(isPipe) {
-                //usleep(3000000);
-                printf("(pipe child)If the children are running: %d\n", check); // Children not running
                 execute_pipe_command(pipeNumber, argv);
                 exit(0);
             }
             else if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
+                // Detect if the user wants to change dir
                 changeDir = true;
                 if (chdir(argv[1]) != 0) {
                     perror("chdir() failed");
@@ -152,15 +159,13 @@ void execute_command(char *cmd, char *buffer) {
             }
             else {
                 if((strcmp(argv[0], "cc") == 0)) {
-                    for(int k = 0; k < 100; k++) {
-                        usleep(1000000);
+                    for(int k = 0; k < 50; k++) {
+                    usleep(100000);
                         printf("%d\n", k);
                     }
+                    exit(0);
                 }
-                else if(!changeDir) {
-                    //usleep(3000000);
-                    printf("(normal child)If the children are running: %d\n", check); // Children not running
-                    
+                else if(!changeDir && !isfg) {                    
                     int return_code = execvp(*argv, argv); // execute the command
                     if(return_code != 0 || argv[0] == NULL) {
                         printf("Your command is invalid. Please re-enter one.\n");
@@ -311,12 +316,12 @@ void execute_pipe_command(int pipeNumber, char** argv) {
 }
 
 int main(void) {
+    
     char cmd[1024];		// pointer to entered command
 
     char buffer[BUFSIZE];	// room for 80 chars plus \0
 
     execute_command(cmd, buffer);
-
     exit(0);
 }
 
