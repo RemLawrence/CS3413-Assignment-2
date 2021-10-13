@@ -13,6 +13,7 @@
 
 #define BUFSIZE 1024
 int pid = 4396; // random pid for initialization
+int contpid = 4396; // pid. Used for tracking those paused processes for now.
 void execute_pipe_command(int, char**);
 
 
@@ -38,38 +39,34 @@ void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
     argv[cmdIndex] = NULL;
 }
 
-void sig_handler(int signo)
+void sig_handler()
 {
-    if (signo == SIGTSTP) {
-        // First check if the child is running
-        if (kill(pid, 0) == 0) {
-            // There are jobs running
-            printf("\nThe job is suspsnded. Type 'fg' to resume. (Or 'bg' if you want)\n");
-        }
-        else if (kill(pid, 0) == -1) {
-            // No job currently running
-            printf("\nThere currently is no job running! Shell is still alive. Type a command below!\n"); // If child isn not running, print this message
-        }
+    // First check if the child is running
+    if (kill(pid, 0) == 0 || kill(contpid, 0) == 0) {
+        // There are jobs running
+        printf("\nThe job is suspsnded. Type 'fg' to resume. (Or 'bg' if you want)\n");
     }
-    signal(signo, sig_handler); // re-subscribe
+    else if (kill(pid, 0) == -1) {
+        // No job currently running
+        printf("\nThere currently is no job running! Shell is still alive. Type a command below!\n"); // If child isn not running, print this message
+    }
+    signal(SIGTSTP, sig_handler); // re-subscribe
 }
 
 void execute_command(char *cmd, char *buffer) {
     bool isfg = false; // Detect if the user entered fg
-    int contpid = 4396; // pid. Used for tracking those paused processes for now.
-    while(cmd != NULL) {
-        
+    while(1) {
         char *argv[1024]; /* the command line argument      */
         bool changeDir = false; // If the command is cd xxx ?
         bool isPipe = false; // If the command needs pipe?
-        int pipeNumber = 0;
+        int pipeNumber = 0; // Number of pipes needed
         
         // Catch Ctrl+Z
         // if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
         //     perror("\nCan't catch SIGTSTP\n");
         // }
         // Print a prompt and read a command from standard input
-        if(!isfg){
+        if(!isfg) {
             printf("%s %% ", getcwd(NULL, 1024)); // Get the current dir.
         }
         cmd = fgets(buffer, BUFSIZE, stdin);
@@ -96,14 +93,16 @@ void execute_command(char *cmd, char *buffer) {
         if(pid != 0) {
             // parent work
             int status; // Used for tracking the process's status
+            
             // Catch Ctrl+Z
             if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
                 perror("\nCan't catch SIGTSTP\n");
             }
+
             printf("parent pid %d\n", pid);
 
             do {
-                waitpid(pid, &status, WUNTRACED | WCONTINUED);
+                waitpid(pid, &status, WUNTRACED);
                 printf("status %d\n", status);
                 printf("exited:    %d status: %d\n", WIFEXITED(status), WEXITSTATUS(status));
                 printf( "signalled: %d signal: %d\n", WIFSIGNALED(status), WTERMSIG(status));
@@ -111,10 +110,11 @@ void execute_command(char *cmd, char *buffer) {
                 printf("continued: %d\n", WIFCONTINUED(status));
                 printf("***************************\n");
                 printf("cmd %s\n", cmd);
+                printf("do while contpid %d\n", contpid);
                 if(WIFSTOPPED(status) == 1)
                 {
-                    printf("contpid pid %d\n", pid);
                     contpid = pid;
+                    printf(" wifstopped contpid pid %d\n", contpid);
                     printf("child exited with code: %d\n", WIFSTOPPED(status));
                     break;
                 }
@@ -124,12 +124,12 @@ void execute_command(char *cmd, char *buffer) {
             if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
                 isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
                 printf("fg pid %d\n", pid);
-                printf("fg contpid %d\n", contpid);
+                
                 changeDir = true;
                 kill(contpid, SIGCONT); // Continue the tracked process
                 int ifexit = waitpid(contpid, &status, WUNTRACED); // and let parent wait for it
-                printf("%d\n", ifexit);
-                if(ifexit == contpid){
+                printf("fg ifexit %d\n", ifexit);
+                if(ifexit == contpid) {
                     //Check if waitpid has finished. If finished, then restore the fg flag.
                     isfg = false;
                 }
