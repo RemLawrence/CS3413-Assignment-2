@@ -54,13 +54,20 @@ void sig_handler()
 }
 
 void execute_command(char *cmd, char *buffer) {
-    bool isfg = false; // Detect if the user entered fg
     bool isbg = false;
+    // Catch Ctrl+Z
+    if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
+        perror("\nCan't catch SIGTSTP\n");
+    }
+
     while(1) {
         char *argv[1024]; /* the command line argument      */
         bool changeDir = false; // If the command is cd xxx ?
         bool isPipe = false; // If the command needs pipe?
         int pipeNumber = 0; // Number of pipes needed
+        bool isfg = false; // Detect if the user entered fg
+        int status; // Used for tracking the process's status
+        int paused_status;
         
         // Print a prompt and read a command from standard input
         if(!isfg) {
@@ -89,13 +96,6 @@ void execute_command(char *cmd, char *buffer) {
         pid = fork();
         if(pid != 0) {
             // parent work
-            int status; // Used for tracking the process's status
-            
-            // Catch Ctrl+Z
-            if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
-                perror("\nCan't catch SIGTSTP\n");
-            }
-
             if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
                 isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
                 // printf("fg pid %d\n", pid);
@@ -104,55 +104,46 @@ void execute_command(char *cmd, char *buffer) {
                     perror("Continue process failed");
                 } // Continue the tracked process
                 
-                int ifexit = waitpid(contpid, &status, WUNTRACED); // and let parent wait for it
+                int ifexit = waitpid(contpid, &paused_status, WUNTRACED); // and let parent wait for it
                 printf("fg contpid %d\n", contpid);
                 printf("fg ifexit %d\n", ifexit);
-                printf("fg status %d\n", status);
                 if(ifexit == contpid) {
                     printf("fg %d\n", kill(contpid, 0));
                     //Check if waitpid has finished. If finished, then restore the fg flag to false.
                     isfg = false;
                 }
             }
-            else if(strcmp(cmd, "bg") == 0) {
-                isbg = true;
-                // printf("bg pid %d\n", pid);
-                // printf("bg contpid %d\n", contpid);
-                if(kill(contpid, SIGCONT) == -1) {
-                    perror("Continue process failed");
-                } // Continue the tracked process without locking the shell resources
-                
-                int ifexit = waitpid(contpid, &status, WUNTRACED | WCONTINUED); // and let parent wait for it
-                printf("bg contpid %d\n", contpid);
-                printf("bg ifexit %d\n", ifexit);
-                printf("bg status %d\n", status);
-                //kill(contpid, SIGCONT); // Continue the tracked process
-                if(ifexit == contpid) {
-                    printf("bg %d\n", kill(contpid, 0));
-                    //Check if waitpid has finished. If finished, then restore the fg flag to false.
-                    isbg = false;
-                    
-                }
-                //kill(contpid, SIGTERM); // Continue the tracked process
-            }
+            
 
             //printf("parent pid %d\n", pid);
 
             do {
                 waitpid(pid, &status, WUNTRACED);
                 printf("status %d\n", status);
-                printf("exited:    %d status: %d\n", WIFEXITED(status), WEXITSTATUS(status));
-                printf( "signalled: %d signal: %d\n", WIFSIGNALED(status), WTERMSIG(status));
-                printf("stopped:   %d signal: %d\n", WIFSTOPPED(status), WSTOPSIG(status));
-                printf("continued: %d\n", WIFCONTINUED(status));
-                printf("***************************\n");
-                printf("cmd %s\n", cmd);
-                printf("do while contpid %d\n", contpid);
+                // printf("exited:    %d status: %d\n", WIFEXITED(status), WEXITSTATUS(status));
+                // printf( "signalled: %d signal: %d\n", WIFSIGNALED(status), WTERMSIG(status));
+                // printf("stopped:   %d signal: %d\n", WIFSTOPPED(status), WSTOPSIG(status));
+                // printf("continued: %d\n", WIFCONTINUED(status));
+                // printf("***************************\n");
+                // printf("cmd %s\n", cmd);
+                // printf("do while contpid %d\n", contpid);
                 if (WIFSTOPPED(status) == 1)
                 {
                     contpid = pid;
                     break; // break out of the loop
                 }
+
+                if(strcmp(cmd, "bg") == 0) {
+                //isbg = true;
+                // printf("bg pid %d\n", pid);
+                // printf("bg contpid %d\n", contpid);
+                if(kill(contpid, SIGCONT) == -1) {
+                    perror("Continue process failed");
+                } // Continue the tracked process without locking the shell resources
+                waitpid(contpid, &paused_status, WCONTINUED| WEXITED);
+                
+                //kill(contpid, SIGTERM); // Continue the tracked process
+            }
                 
             } while(!WIFEXITED(status));
 
@@ -160,7 +151,9 @@ void execute_command(char *cmd, char *buffer) {
         }
         else {
             // pid == 0, child's work
-            printf("child %d\n", kill(contpid, 0));
+            printf("child contpid%d\n", kill(contpid, 0));
+            printf("child pid%d\n", kill(pid, 0));
+            printf("paused_status %d\n", paused_status);
             if(kill(contpid, 0) != 0) {
                 // If there is no paused/unfinised process, then execute a new command is allowed.
                 if(isPipe) {
