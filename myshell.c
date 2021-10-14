@@ -55,16 +55,13 @@ void sig_handler()
 
 void execute_command(char *cmd, char *buffer) {
     bool isfg = false; // Detect if the user entered fg
+    bool isbg = false;
     while(1) {
         char *argv[1024]; /* the command line argument      */
         bool changeDir = false; // If the command is cd xxx ?
         bool isPipe = false; // If the command needs pipe?
         int pipeNumber = 0; // Number of pipes needed
         
-        // Catch Ctrl+Z
-        // if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
-        //     perror("\nCan't catch SIGTSTP\n");
-        // }
         // Print a prompt and read a command from standard input
         if(!isfg) {
             printf("%s %% ", getcwd(NULL, 1024)); // Get the current dir.
@@ -99,7 +96,47 @@ void execute_command(char *cmd, char *buffer) {
                 perror("\nCan't catch SIGTSTP\n");
             }
 
-            printf("parent pid %d\n", pid);
+            if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
+                isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
+                // printf("fg pid %d\n", pid);
+
+                if(kill(contpid, SIGCONT) == -1) {
+                    perror("Continue process failed");
+                } // Continue the tracked process
+                
+                int ifexit = waitpid(contpid, &status, WUNTRACED); // and let parent wait for it
+                printf("fg contpid %d\n", contpid);
+                printf("fg ifexit %d\n", ifexit);
+                printf("fg status %d\n", status);
+                if(ifexit == contpid) {
+                    printf("fg %d\n", kill(contpid, 0));
+                    //Check if waitpid has finished. If finished, then restore the fg flag to false.
+                    isfg = false;
+                }
+            }
+            else if(strcmp(cmd, "bg") == 0) {
+                isbg = true;
+                // printf("bg pid %d\n", pid);
+                // printf("bg contpid %d\n", contpid);
+                if(kill(contpid, SIGCONT) == -1) {
+                    perror("Continue process failed");
+                } // Continue the tracked process without locking the shell resources
+                
+                int ifexit = waitpid(contpid, &status, WUNTRACED | WCONTINUED); // and let parent wait for it
+                printf("bg contpid %d\n", contpid);
+                printf("bg ifexit %d\n", ifexit);
+                printf("bg status %d\n", status);
+                //kill(contpid, SIGCONT); // Continue the tracked process
+                if(ifexit == contpid) {
+                    printf("bg %d\n", kill(contpid, 0));
+                    //Check if waitpid has finished. If finished, then restore the fg flag to false.
+                    isbg = false;
+                    
+                }
+                //kill(contpid, SIGTERM); // Continue the tracked process
+            }
+
+            //printf("parent pid %d\n", pid);
 
             do {
                 waitpid(pid, &status, WUNTRACED);
@@ -111,67 +148,54 @@ void execute_command(char *cmd, char *buffer) {
                 printf("***************************\n");
                 printf("cmd %s\n", cmd);
                 printf("do while contpid %d\n", contpid);
-                if(WIFSTOPPED(status) == 1)
+                if (WIFSTOPPED(status) == 1)
                 {
                     contpid = pid;
-                    printf(" wifstopped contpid pid %d\n", contpid);
-                    printf("child exited with code: %d\n", WIFSTOPPED(status));
-                    break;
+                    break; // break out of the loop
                 }
                 
             } while(!WIFEXITED(status));
 
-            if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
-                isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
-                printf("fg pid %d\n", pid);
-                
-                changeDir = true;
-                kill(contpid, SIGCONT); // Continue the tracked process
-                int ifexit = waitpid(contpid, &status, WUNTRACED); // and let parent wait for it
-                printf("fg ifexit %d\n", ifexit);
-                if(ifexit == contpid) {
-                    //Check if waitpid has finished. If finished, then restore the fg flag.
-                    isfg = false;
-                }
-            }
-            else if(strcmp(cmd, "bg") == 0) {
-                printf("bg pid %d\n", pid);
-                printf("bg contpid %d\n", contpid);
-                changeDir = true;
-                kill(contpid, SIGCONT); // Continue the tracked process
-                // Without locking the shell resources
-            }
+            
         }
         else {
-            printf("parent pid  %d\n", pid);
             // pid == 0, child's work
-            if(isPipe) {
-                execute_pipe_command(pipeNumber, argv);
-                exit(0);
-            }
-            else if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
-                // Detect if the user wants to change dir
-                changeDir = true;
-                if (chdir(argv[1]) != 0) {
-                    perror("chdir() failed");
+            printf("child %d\n", kill(contpid, 0));
+            if(kill(contpid, 0) != 0) {
+                // If there is no paused/unfinised process, then execute a new command is allowed.
+                if(isPipe) {
+                    execute_pipe_command(pipeNumber, argv);
                     exit(0);
                 }
-            }
-            else {
-                if((strcmp(argv[0], "cc") == 0)) {
-                    for(int k = 0; k < 50; k++) {
-                    usleep(100000);
-                        printf("%d\n", k);
-                    }
-                    exit(0);
-                }
-                else if(!changeDir && !isfg) {                    
-                    int return_code = execvp(*argv, argv); // execute the command
-                    if(return_code != 0 || argv[0] == NULL) {
-                        printf("Your command is invalid. Please re-enter one.\n");
+                else if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
+                    // Detect if the user wants to change dir
+                    changeDir = true;
+                    if (chdir(argv[1]) != 0) {
+                        perror("chdir() failed");
                         exit(0);
                     }
                 }
+                else {
+                    if(!changeDir && !isfg) {
+                        // Execute the command normally
+                        int return_code = execvp(*argv, argv); // execute the command
+                        if(return_code != 0 || argv[0] == NULL) {
+                            printf("Your command is invalid. Please re-enter one.\n");
+                            exit(0);
+                        }
+                        exit(0);
+                    }
+                }
+            }
+            else {
+                if(strcmp(cmd, "fg") == 0 || strcmp(cmd, "bg") == 0){
+                    // Only fg and bg allowed when a process is running
+                }
+                else {
+                    // If the paused/continued process hasn't exited, then don't allow any new commands to be executed.  
+                    printf("Not allowed to start new command while you have a job active.\n"); 
+                }  
+                exit(0); // This is important. It allows to exit out of this children.
             }
         }
     }
