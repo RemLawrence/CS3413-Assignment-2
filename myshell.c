@@ -98,7 +98,6 @@ void execute_command(char *cmd, char *buffer) {
             changeDir = true;
             if (chdir(argv[1]) != 0) {
                 perror("chdir() failed");
-                exit(0);
             }
         }
 
@@ -350,4 +349,6 @@ int main(void) {
     char buffer[BUFSIZE];	// room for 80 chars plus \0
 
     execute_command(cmd, buffer);
+    
+    exit(0);
 }
