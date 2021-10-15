@@ -94,7 +94,6 @@ void execute_command(char *cmd, char *buffer) {
         }
 
         if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
-            printf("getpid %d\n", getpid());
             // Detect if the user wants to change dir
             changeDir = true;
             if (chdir(argv[1]) != 0) {
@@ -104,7 +103,6 @@ void execute_command(char *cmd, char *buffer) {
         }
 
         if (strcmp(argv[0], "exit") == 0) {  /* is it an "exit"?     */
-            printf("getpid() %d\n", getpid());
             printf("Quit Shell\n");
             exit(0); // Exit from the parent (shell)
         }
@@ -115,7 +113,11 @@ void execute_command(char *cmd, char *buffer) {
         }
 
         pid = fork();
-        if(pid != 0) {
+        if(pid < 0) {
+            printf("Fork failed");
+            exit(0);
+        }
+        else if(pid > 0) {
             // parent work
             if(strcmp(cmd, "fg") == 0 && contpid != -4396) {
                 isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
@@ -125,6 +127,9 @@ void execute_command(char *cmd, char *buffer) {
                 } // Continue the tracked process
                 
                 int ifexit = waitpid(contpid, &paused_status, WUNTRACED); // and let parent wait for it
+                if (ifexit == -1){
+                    printf("waitpid failde!");
+                }
                 if(ifexit == contpid) {
                     //Check if waitpid has finished. If finished, then restore the fg flag to false.
                     isfg = false;
@@ -134,12 +139,12 @@ void execute_command(char *cmd, char *buffer) {
                 if(kill(contpid, SIGCONT) == -1) {
                     perror("Continue process failed");
                 } // Continue the tracked process without locking the shell resources
-
-                waitpid(-1, &paused_status, WNOHANG);
             }
 
             do {
-                waitpid(pid, &status, WUNTRACED);
+                if(waitpid(pid, &status, WUNTRACED) == -1) {
+                    perror("waitpid failed!");
+                }
 
                 if (WIFSTOPPED(status) == 1)
                 {
@@ -152,7 +157,7 @@ void execute_command(char *cmd, char *buffer) {
         }
         else {
             // pid == 0, child's work
-            if(kill(contpid, 0) != 0) {
+            if(kill(contpid, 0) == -1) {
                 // If there is no paused/unfinised process, then execute a new command is allowed.
                 if(isPipe) {
                     // Execute command with pipe(s)
@@ -195,7 +200,7 @@ void execute_pipe_command(int pipeNumber, char** argv) {
     for(pipeIndex = 0; pipeIndex < pipeNumber; pipeIndex++) {
         // Initialize/Create the pipe(s)
         if(pipe(pipes[pipeIndex]) < 0) {
-            printf("An error occured with opening the pipe.\n");
+            perror("An error occured with opening the pipe.\n");
             exit(0);
         }
     }
@@ -215,48 +220,81 @@ void execute_pipe_command(int pipeNumber, char** argv) {
         if(i == 0) {
             /**********************Process only writes to pipe (first command)**********************/
             int pid1 = fork();
-            if(pid1 != 0) {
+            if(pid1 < 0) {
+                printf("Fork failed");
+                exit(0);
+            }
+            else if(pid1 > 0) {
                 // parent work
-                waitpid(pid1, NULL, 0);
+                if(waitpid(pid1, NULL, 0) == -1) {
+                    perror("waitpid1 failed!");
+                }
             }
             else { // pid == 0, child's work
-                close(pipes[i][0]); // Close the unused piper end
-                dup2(pipes[i][1], 1); // Replace stdout with pipew . Stdout is disabled
+                if(close(pipes[i][0]) == -1) {
+                    perror("Close the unused piper end failed!");
+                } // Close the unused piper end
+                if(dup2(pipes[i][1], 1) == -1) { // Replace stdout with pipew . Stdout is disabled
+                    perror("Replace stdout with pipe's write end failed!");
+                } 
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 //write(pipe[1], stdout, 1);
-                close(pipes[i][1]); // After using pipe's write end, close it (in child)
+                if(close(pipes[i][1]) == -1) {
+                    perror("Close the pipew end failed!");
+                } // After using pipe's write end, close it (in child)
                 if(return_code != 0 || argv[0] == NULL) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
             }
-            close(pipes[i][1]); // Close pipe's write end in parent. This line is important!
+            if(close(pipes[i][1]) == -1) {
+                perror("Close the pipew end (in parent) failed!");
+            } // Close pipe's write end in parent. This line is important!
         }
         else {
             /**********************Processes only read && write to pipe**********************/
             // then this process has the responsibility to read from & write to the pipe
             int pid2 = fork();
-            if(pid2 != 0) {
+            if(pid2 < 0) {
+                printf("Fork failed");
+                exit(0);
+            }
+            else if(pid2 > 0) {
                 // parent work
-                waitpid(pid2, NULL, 0);
+                if(waitpid(pid2, NULL, 0) == -1) {
+                    perror("waitpid2 failed!");
+                }
             }
             else { // pid == 0, child's work
-                close(pipes[i-1][1]); // Close the unused last pipew end
-                close(pipes[i][0]); // Close the unused this piper
-                dup2(pipes[i-1][0], 0); // Replace stdin with last piper
-                dup2(pipes[i][1], 1); // Replace stdout with this pipew
+                if(close(pipes[i][0]) == -1) {
+                    perror("Close the unused piper end failed!");
+                } // Close the unused this piper
+                if(dup2(pipes[i-1][0], 0) == -1) {
+                    perror("Replace stdin with pipe's read end failed!");
+                } // Replace stdin with last piper
+                if(dup2(pipes[i][1], 1) == -1) {
+                    perror("Replace stdout with pipe's write end failed!");
+                } // Replace stdout with this pipew
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
-                close(pipes[i-1][0]); // Close last pipe's read end (in child)
-                close(pipes[i][1]); // Close this pipe's write end (in child)
+                if(close(pipes[i-1][0]) == -1) {
+                    perror("Close the last piper end failed!");
+                } // Close last pipe's read end (in child)
+                if(close(pipes[i][1]) == -1) {
+                    perror("Close the pipew end failed!");
+                } // Close this pipe's write end (in child)
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
             }
-            close(pipes[i-1][0]); // Close last pipe's read end (in parent)
-            close(pipes[i][1]); // Close this pipe's write end (in parent)
+            if(close(pipes[i-1][0]) == -1) {
+                perror("Close last piper end (in parent) failed!");
+            } // Close last pipe's read end (in parent)
+            if(close(pipes[i][1]) == -1) {
+                perror("Close this pipew end (in parent) failed!");
+            } // Close this pipe's write end (in parent)
         }
 
 
@@ -264,15 +302,20 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             /**********************Process reads from pipe and write to stdout (last command)**********************/
             // then finish the pipe and starting to write stdout
             int pid3 = fork();
-            if(pid3 != 0) {
+            if(pid3 < 0) {
+                printf("Fork failed");
+                exit(0);
+            }
+            else if(pid3 > 0) {
                 // parent work
-                waitpid(pid3, NULL, 0);
+                if(waitpid(pid3, NULL, 0) == -1) {
+                    perror("waitpid3 failed!");
+                }
             }
             else { // pid == 0, child's work
-                close(pipes[i-1][1]); // Close the unused last pipew end
-                close(pipes[i-1][0]); // Close the unused last piper end
-                close(pipes[i][1]); // Close the unused pipew end
-                dup2(pipes[i][0], 0); // Replace stdin with piper
+                if(dup2(pipes[i][0], 0) == -1) {
+                    perror("Replace stdin with pipe's read end failed!");
+                } // Replace stdin with piper
 
                 char* lastCmd[1024];
                 int lastPipedCmdIndex = 0;
@@ -285,14 +328,17 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 lastCmd[lastPipedCmdIndex + 1] = "\0";
 
                 int return_code = execvp(*lastCmd, lastCmd); // execute the command
-                close(pipes[i][0]); // Close this pipe's read end (in child)
+                if(close(pipes[i][0]) == -1) {
+                    perror("Close the piper end failed!");
+                } // Close this pipe's read end (in child)
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
             }
-            close(pipes[i][0]); // Close this pipe's read end (in parent)
-            close(pipes[i][1]); // Close this pipe's write end (in parent)
+            if(close(pipes[i][0]) == -1) {
+                perror("Close the piper end (in parent) failed!");
+            } // Close this pipe's read end (in parent)
         }
     }
 }
@@ -305,34 +351,3 @@ int main(void) {
 
     execute_command(cmd, buffer);
 }
-
-
-
-// void handler(int num) {
-//     // overwrite the signal's function
-//     write(STDOUT_FILENO, "I won't die\n", 13);
-// }
-
-// signal(SIGINT, handler) // I want my handler to run whenever a SIGINT is hit.
-// signal(SIGTERM, handler) // I want my handler to run whenever a SIGINT is hit.
-// signal(SIGKILL, handler) // SIGKILL is an order, not a request
-
-
-// void seghandler(int num) {
-//     // overwrite the signal's function
-//     write(STDOUT_FILENO, "SEG FAULT!\n", 13);
-// }
-
-// signal(SIGSEGV, seghandler) // I want my handler to run whenever a SIGINT is hit.
-
-
-//To reproduce:
-// ls -la | grep a | grep c | grep e
-// ls | grep p
-
-//OR
-
-// ls /usr/bin | more | grep c
-// but ls -la | more | grep c
-
-// ls -la | grep c | more | grep a | more | grep e | more | grep O
