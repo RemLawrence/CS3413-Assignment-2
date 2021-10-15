@@ -1,5 +1,6 @@
-/* Shell
+/* A Simple Shell for CS3413 Assignment 2
     Author: Micah Hanmin Wang
+    2021-10-15
 */
 
 #include <stdio.h>
@@ -12,11 +13,13 @@
 #include <signal.h>
 
 #define BUFSIZE 1024
-int pid = 4396; // random pid for initialization
-int contpid = 4396; // pid. Used for tracking those paused processes for now.
+int pid = -4396; // random pid for initialization (this is not a 'magic number', just a random integer for initialization)
+int contpid = -4396; // pid. Used for tracking those paused processes for now. (this is not a 'magic number', just a random integer for initialization)
 void execute_pipe_command(int, char**);
 
-
+/**
+ * Parse the Command into a string array
+ **/
 void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
 {
     // child work
@@ -34,17 +37,20 @@ void parse(char *line, char **argv, char *buffer, bool *isPipe, int *pipeNumber)
             *isPipe = true; // Check if this cmd requires pipe
             *pipeNumber = *pipeNumber + 1;
         }
-        //printf("%s\n", token);
     }
     argv[cmdIndex] = NULL;
 }
 
+/**
+ * Signal handler for SIGTSTP.
+ * Decide if there's a job that needs to be suspended
+ **/
 void sig_handler()
 {
     // First check if the child is running
     if (kill(pid, 0) == 0 || kill(contpid, 0) == 0) {
         // There are jobs running
-        printf("\nThe job is suspsnded. Type 'fg' to resume. (Or 'bg' if you want)\n");
+        printf("\nThe job is suspsnded. Type 'fg' to resume. (Or 'bg' if you want)\n"); 
     }
     else if (kill(pid, 0) == -1) {
         // No job currently running
@@ -53,21 +59,24 @@ void sig_handler()
     signal(SIGTSTP, sig_handler); // re-subscribe
 }
 
+/**
+ * Used to read and execute the command using execvp
+ * Also deals with the SIGTSTP signal with internal command: fg and bg
+ **/
 void execute_command(char *cmd, char *buffer) {
-    bool isbg = false;
     // Catch Ctrl+Z
     if (signal(SIGTSTP, sig_handler) == SIG_ERR) {
         perror("\nCan't catch SIGTSTP\n");
     }
 
-    while(1) {
+    while(cmd != NULL) {
         char *argv[1024]; /* the command line argument      */
         bool changeDir = false; // If the command is cd xxx ?
         bool isPipe = false; // If the command needs pipe?
         int pipeNumber = 0; // Number of pipes needed
         bool isfg = false; // Detect if the user entered fg
         int status; // Used for tracking the process's status
-        int paused_status;
+        int paused_status; // Used for tracking the paused process's status
         
         // Print a prompt and read a command from standard input
         if(!isfg) {
@@ -84,89 +93,71 @@ void execute_command(char *cmd, char *buffer) {
             parse(cmd, argv, buffer, &isPipe, &pipeNumber);
         }
 
+        if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
+            printf("getpid %d\n", getpid());
+            // Detect if the user wants to change dir
+            changeDir = true;
+            if (chdir(argv[1]) != 0) {
+                perror("chdir() failed");
+                exit(0);
+            }
+        }
+
         if (strcmp(argv[0], "exit") == 0) {  /* is it an "exit"?     */
+            printf("getpid() %d\n", getpid());
             printf("Quit Shell\n");
             exit(0); // Exit from the parent (shell)
         }
 
         if (pipeNumber > 100) {  // if this command requires more than 100 pipes
             printf("This shell program only supports maximum 100 number of commands :)\n");
+            isPipe = false;
         }
 
         pid = fork();
         if(pid != 0) {
             // parent work
-            if(strcmp(cmd, "fg") == 0 && contpid != 4396) {
+            if(strcmp(cmd, "fg") == 0 && contpid != -4396) {
                 isfg = true; // isfg flag set to true -- command execution and shell printout are blocked
-                // printf("fg pid %d\n", pid);
 
                 if(kill(contpid, SIGCONT) == -1) {
                     perror("Continue process failed");
                 } // Continue the tracked process
                 
                 int ifexit = waitpid(contpid, &paused_status, WUNTRACED); // and let parent wait for it
-                printf("fg contpid %d\n", contpid);
-                printf("fg ifexit %d\n", ifexit);
                 if(ifexit == contpid) {
-                    printf("fg %d\n", kill(contpid, 0));
                     //Check if waitpid has finished. If finished, then restore the fg flag to false.
                     isfg = false;
                 }
             }
-            
-
-            //printf("parent pid %d\n", pid);
-
-            do {
-                waitpid(pid, &status, WUNTRACED);
-                printf("status %d\n", status);
-                // printf("exited:    %d status: %d\n", WIFEXITED(status), WEXITSTATUS(status));
-                // printf( "signalled: %d signal: %d\n", WIFSIGNALED(status), WTERMSIG(status));
-                // printf("stopped:   %d signal: %d\n", WIFSTOPPED(status), WSTOPSIG(status));
-                // printf("continued: %d\n", WIFCONTINUED(status));
-                // printf("***************************\n");
-                // printf("cmd %s\n", cmd);
-                // printf("do while contpid %d\n", contpid);
-                if (WIFSTOPPED(status) == 1)
-                {
-                    contpid = pid;
-                    break; // break out of the loop
-                }
-
-                if(strcmp(cmd, "bg") == 0) {
-                //isbg = true;
-                // printf("bg pid %d\n", pid);
-                // printf("bg contpid %d\n", contpid);
+            if(strcmp(cmd, "bg") == 0) {
                 if(kill(contpid, SIGCONT) == -1) {
                     perror("Continue process failed");
                 } // Continue the tracked process without locking the shell resources
-                waitpid(contpid, &paused_status, WCONTINUED| WEXITED);
-                
-                //kill(contpid, SIGTERM); // Continue the tracked process
+
+                waitpid(-1, &paused_status, WNOHANG);
             }
+
+            do {
+                waitpid(pid, &status, WUNTRACED);
+
+                if (WIFSTOPPED(status) == 1)
+                {
+                    //Child has been suspended.
+                    contpid = pid; // Record the suspended process id (contpid)
+                    break; // break out of the loop
+                }
                 
             } while(!WIFEXITED(status));
-
-            
         }
         else {
             // pid == 0, child's work
-            printf("child contpid%d\n", kill(contpid, 0));
-            printf("child pid%d\n", kill(pid, 0));
-            printf("paused_status %d\n", paused_status);
             if(kill(contpid, 0) != 0) {
                 // If there is no paused/unfinised process, then execute a new command is allowed.
                 if(isPipe) {
+                    // Execute command with pipe(s)
                     execute_pipe_command(pipeNumber, argv);
                     exit(0);
-                }
-                else if((strcmp(argv[0], "cd") == 0) && (argv[1] != NULL)) {
-                    // Detect if the user wants to change dir
-                    changeDir = true;
-                    if (chdir(argv[1]) != 0) {
-                        perror("chdir() failed");
-                        exit(0);
-                    }
                 }
                 else {
                     if(!changeDir && !isfg) {
@@ -176,13 +167,13 @@ void execute_command(char *cmd, char *buffer) {
                             printf("Your command is invalid. Please re-enter one.\n");
                             exit(0);
                         }
-                        exit(0);
                     }
+                    exit(0);
                 }
             }
             else {
                 if(strcmp(cmd, "fg") == 0 || strcmp(cmd, "bg") == 0){
-                    // Only fg and bg allowed when a process is running
+                    // Only internal commands allowed when a process is running
                 }
                 else {
                     // If the paused/continued process hasn't exited, then don't allow any new commands to be executed.  
@@ -194,6 +185,9 @@ void execute_command(char *cmd, char *buffer) {
     }
 }
 
+/**
+ * Execute commands with pipes
+ **/
 void execute_pipe_command(int pipeNumber, char** argv) {
     // At this point, the cmd are at least in this format: ls /usr/bin | grep a
     int pipes[pipeNumber][2];
@@ -208,7 +202,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
 
     int i = 0;
     for(i = 0; i < pipeNumber; i++) {
-        //printf("index: %d\n", i);
         char *pipedCmd[1024] = {0}; // Used for storing separate commands from the argv[]
         int index = 0;
         for(index = 0; (strcmp(argv[0], "|") != 0); index++) {
@@ -216,18 +209,12 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             pipedCmd[index] = argv[0]; // Store the separate command into pipedCmd[]
             argv = argv + 1; // Increase the original cmd pointer
         }
-        //printf("argv[0] before: %s\n", argv[0]);
         argv = argv + 1; // Increase the pointer to skip '|'
-        //printf("argv[0] now: %s\n", argv[0]);
-        //pipedCmd[index + 1] = "\0";
-        //printf("pipedCmd[0]: %s\n", pipedCmd[0]);
 
 
         if(i == 0) {
             /**********************Process only writes to pipe (first command)**********************/
             int pid1 = fork();
-            printf("pid1 %d\n", pid1);
-            //waitpid(pid1, NULL, 0);
             if(pid1 != 0) {
                 // parent work
                 waitpid(pid1, NULL, 0);
@@ -235,11 +222,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             else { // pid == 0, child's work
                 close(pipes[i][0]); // Close the unused piper end
                 dup2(pipes[i][1], 1); // Replace stdout with pipew . Stdout is disabled
-
-                // printf("1 pipedCmd[0] %s\n", pipedCmd[0]);
-                // printf("1 pipedCmd[1] %s\n", pipedCmd[1]);
-                // printf("1 pipedCmd[2] %s\n", pipedCmd[2]);
-                // printf("1 argv[0] %s\n", argv[0]);
 
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 //write(pipe[1], stdout, 1);
@@ -255,8 +237,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             /**********************Processes only read && write to pipe**********************/
             // then this process has the responsibility to read from & write to the pipe
             int pid2 = fork();
-            printf("pid2 %d\n", pid2);
-            //waitpid(pid2, NULL, 0);
             if(pid2 != 0) {
                 // parent work
                 waitpid(pid2, NULL, 0);
@@ -267,11 +247,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 dup2(pipes[i-1][0], 0); // Replace stdin with last piper
                 dup2(pipes[i][1], 1); // Replace stdout with this pipew
 
-                // printf("2 pipedCmd[0] %s\n", pipedCmd[0]);
-                // printf("2 pipedCmd[1] %s\n", pipedCmd[1]);
-                // printf("2 pipedCmd[2] %s\n", pipedCmd[2]);
-                // printf("2 argv[0] %s\n", argv[0]);
-
                 int return_code = execvp(*pipedCmd, pipedCmd); // execute the command
                 close(pipes[i-1][0]); // Close last pipe's read end (in child)
                 close(pipes[i][1]); // Close this pipe's write end (in child)
@@ -279,7 +254,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
-                //exit(0);
             }
             close(pipes[i-1][0]); // Close last pipe's read end (in parent)
             close(pipes[i][1]); // Close this pipe's write end (in parent)
@@ -290,8 +264,6 @@ void execute_pipe_command(int pipeNumber, char** argv) {
             /**********************Process reads from pipe and write to stdout (last command)**********************/
             // then finish the pipe and starting to write stdout
             int pid3 = fork();
-            printf("pid3 %d\n", pid3);
-            //waitpid(pid3, NULL, 0);
             if(pid3 != 0) {
                 // parent work
                 waitpid(pid3, NULL, 0);
@@ -312,23 +284,16 @@ void execute_pipe_command(int pipeNumber, char** argv) {
                 argv = argv + 1;
                 lastCmd[lastPipedCmdIndex + 1] = "\0";
 
-                // printf("3 lastCmd[0] %s\n", lastCmd[0]);
-                // printf("3 lastCmd[1] %s\n", lastCmd[1]);
-                // printf("3 lastCmd[2] %s\n", lastCmd[2]);
-                //printf("3 argv[0] %s\n", argv[0]);
-
                 int return_code = execvp(*lastCmd, lastCmd); // execute the command
                 close(pipes[i][0]); // Close this pipe's read end (in child)
                 if(return_code != 0) {
                     printf("Your command is invalid. Please re-enter one.\n");
                     exit(0);
                 }
-                //exit(0);
             }
             close(pipes[i][0]); // Close this pipe's read end (in parent)
             close(pipes[i][1]); // Close this pipe's write end (in parent)
         }
-        //printf("**************LOOP ENDS****************\n");
     }
 }
 
@@ -339,7 +304,6 @@ int main(void) {
     char buffer[BUFSIZE];	// room for 80 chars plus \0
 
     execute_command(cmd, buffer);
-    exit(0);
 }
 
 
